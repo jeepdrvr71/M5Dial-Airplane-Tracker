@@ -2,9 +2,9 @@ M5Dial Live Flight Radar ✈️📡
 A live, interactive ADS-B airplane radar tracker built for the M5Stack M5Dial (ESP32-S3). This project uses the OpenSky Network API to fetch live flight data and visually plots aircraft on the M5Dial's round touchscreen display.
 
 ✨ Features
-Auto-Location Tracking: Automatically pings an IP Geolocation service on boot to find your city and set the exact center of your radar. (Includes manual fallback coordinates).
+Location is manually set in LAT and LONG coordinates. Tried an autolocation method but it seemed to slow things down with the ESP32
 
-Rotary Encoder Zoom: Spin the physical dial to zoom the radar radius in and out (from a tight 30-mile radius up to a massive 300-mile regional view). Flashes a temporary UI element to show the current radius in miles.
+Rotary Encoder Zoom: Spin the physical dial to zoom the radar radius in and out (from a tight 30-mile radius up to a massive 240-mile regional view). Flashes a temporary UI element to show the current radius in miles.
 
 Touchscreen Interaction: Tap on any yellow aircraft on the radar to select it. A popup will display the flight's Callsign, Altitude (converted to feet), and Origin Country.
 
@@ -49,17 +49,14 @@ const char* password = "YOUR_WIFI_PASSWORD";
 const char* clientID = "YOUR_CLIENT_ID";
 const char* clientSecret = "YOUR_CLIENT_SECRET";
 
-// --- FALLBACK RADAR CENTER ---
-// Used ONLY if the auto-location Wi-Fi API fails
-float centerLat = 42.524; // This is Wixom, MI. Add your locations Lat and Long to default to your location
-float centerLon = -83.536;
+
 3. Flash to the M5Dial
 Select M5Dial (or ESP32-S3 Dev Module if M5Dial isn't showing in your boards manager) in the Arduino IDE, compile, and upload.
 
 🕹️ How to Use
-Booting Up: The device will connect to Wi-Fi, ping an IP service to find your coordinates, and securely log in to OpenSky.
+Booting Up: The device will connect to Wi-Fi and securely log in to OpenSky.
 
-Zooming: Turn the outer dial. Counter-clockwise zooms out (up to 300 miles), clockwise zooms in (down to 30 miles).
+Zooming: Turn the outer dial. Counter-clockwise zooms out (up to 240 miles), clockwise zooms in (down to 30 miles).
 
 Selecting Planes: Planes appear as yellow dots. Tap a dot on the screen. It will turn red, and a popup will display the flight information. Tap anywhere else in the black space to deselect the plane and hide the popup.
 
