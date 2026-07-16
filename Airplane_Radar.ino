@@ -9,20 +9,20 @@ const char* ssid = "YOUR_WIFI_SSID";
 const char* password = "YOUR_WIFI_PASSWORD";
 
 // --- OPENSKY API CREDENTIALS (OAUTH2) ---
-// Find these in your OpenSky Account page under "API Client". You can get these credentials when you create an account.
-const char* clientID = "YOUR_CLIENT_ID";    
+// Find these in your OpenSky Account page under "API Client"
+const char* clientID = "YOUR_CLIENT_ID";
 const char* clientSecret = "YOUR_CLIENT_SECRET";
 
-// --- FALLBACK RADAR CENTER ---
-// Used ONLY if the auto-location API fails
-float centerLat = 42.524;   //Example: Wixom, MI. Change these coordinates to default to your location if autolocate fails
+// --- RADAR CENTER ---
+// Manually set your Latitude and Longitude here. This is Wixom, MI in this code
+float centerLat = 42.524; 
 float centerLon = -83.536;
 
 // --- RADAR ZOOM SETTINGS (IN MILES) ---
-float zoomRadius = 100.0 / 69.0; // Start at a 100-mile radius
-float minZoom = 30.0 / 69.0;     // NEW Minimum 30 miles
-float maxZoom = 300.0 / 69.0;    // NEW Maximum 300 miles
-float zoomStep = 10.0 / 69.0;    // Change by 10 miles per dial click
+float zoomRadius = 120.0 / 69.0; // Start at a 120-mile radius
+float minZoom = 30.0 / 69.0;     // Minimum 30 miles
+float maxZoom = 240.0 / 69.0;    // Maximum 300 miles
+float zoomStep = 30.0 / 69.0;    // Change by 30 miles per dial click
 long oldEncoderPos = 0;
 
 // Zoom UI variables
@@ -54,7 +54,11 @@ struct Plane {
 const int MAX_PLANES = 50; 
 Plane planes[MAX_PLANES];
 int planeCount = 0;
+
+// --- SELECTION VARIABLES ---
 int selectedPlaneIndex = -1; 
+unsigned long planeSelectionTimer = 0;
+String currentRoute = ""; // Holds the origin/destination text
 
 void setup() {
   auto cfg = M5.config();
@@ -88,9 +92,6 @@ void setup() {
   M5Dial.Display.fillScreen(TFT_BLACK);
   M5Dial.Display.drawString("Wi-Fi Connected!", 120, 120);
   delay(1000);
-  
-  // --- NEW: AUTO-LOCATE USING IP ADDRESS ---
-  getGeolocation();
   
   oldEncoderPos = M5Dial.Encoder.read();
   
@@ -132,9 +133,21 @@ void loop() {
       int dy = touchY - planes[i].screenY;
       if (dx*dx + dy*dy < 225) { 
         selectedPlaneIndex = i;
+        planeSelectionTimer = millis(); 
+        
+        // --- Trigger Route Fetch on Touch ---
+        currentRoute = "Fetching...";
+        drawRadar(); // Force a draw so the user sees the "Fetching" status immediately
+        fetchRoute(planes[i].callsign);
+        
         break;
       }
     }
+  }
+
+  // Auto-Dismiss Popup after 5 Seconds
+  if (selectedPlaneIndex != -1 && (millis() - planeSelectionTimer > 5000)) {
+    selectedPlaneIndex = -1;
   }
 
   // 3. Handle Periodic API Updates
@@ -148,45 +161,6 @@ void loop() {
     drawRadar();
     lastFrame = millis();
   }
-}
-
-// --- NEW FUNCTION: IP Geolocation ---
-void getGeolocation() {
-  M5Dial.Display.fillScreen(TFT_BLACK);
-  M5Dial.Display.drawString("Finding Location...", 120, 120);
-
-  HTTPClient http;
-  // ip-api is a free service that returns location based on your IP address
-  http.begin("http://ip-api.com/json/"); 
-  int httpCode = http.GET();
-
-  if (httpCode == 200) {
-    String payload = http.getString();
-    DynamicJsonDocument doc(1024);
-    DeserializationError error = deserializeJson(doc, payload);
-
-    if (!error && !doc["lat"].isNull() && !doc["lon"].isNull()) {
-      centerLat = doc["lat"].as<float>();
-      centerLon = doc["lon"].as<float>();
-      
-      M5Dial.Display.fillScreen(TFT_DARKGREEN);
-      M5Dial.Display.setTextColor(TFT_WHITE);
-      M5Dial.Display.drawString("Location Found!", 120, 100);
-      M5Dial.Display.drawString(doc["city"].as<String>(), 120, 130);
-      delay(1500);
-    } else {
-      M5Dial.Display.fillScreen(TFT_MAROON);
-      M5Dial.Display.drawString("Loc. Parse Failed", 120, 120);
-      delay(1500);
-    }
-  } else {
-    M5Dial.Display.fillScreen(TFT_MAROON);
-    M5Dial.Display.drawString("Loc. API Failed", 120, 120);
-    delay(1500);
-  }
-  
-  M5Dial.Display.setTextColor(TFT_LIGHTGREY); // Reset text color for radar
-  http.end();
 }
 
 // --- Securely fetch an OAuth2 Token ---
@@ -228,6 +202,56 @@ void refreshAccessToken() {
   http.end();
 }
 
+// --- Fetch Route for Selected Plane ---
+void fetchRoute(String callsign) {
+  if (WiFi.status() != WL_CONNECTED || accessToken == "") {
+    currentRoute = "No Net/Token";
+    return;
+  }
+  
+  WiFiClientSecure client;
+  client.setInsecure(); 
+  client.setTimeout(5); // Shorter timeout for route lookup so it doesn't freeze the radar for long
+
+  HTTPClient http;
+  String url = "https://opensky-network.org/api/routes?callsign=" + callsign;
+  http.begin(client, url); 
+  
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  http.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"); 
+  http.setTimeout(5000);
+  http.addHeader("Authorization", "Bearer " + accessToken);
+  
+  int httpCode = http.GET();
+
+  if (httpCode == 200) {
+    String payload = http.getString();
+    DynamicJsonDocument doc(2048); 
+    DeserializationError error = deserializeJson(doc, payload);
+
+    if (!error && doc["route"].is<JsonArray>()) {
+      JsonArray routeArr = doc["route"].as<JsonArray>();
+      if (routeArr.size() >= 2) {
+        currentRoute = routeArr[0].as<String>() + " -> " + routeArr[1].as<String>();
+      } else if (routeArr.size() == 1) {
+        currentRoute = routeArr[0].as<String>() + " -> Unk";
+      } else {
+        currentRoute = "Route Unknown";
+      }
+    } else {
+      currentRoute = "Route Unknown";
+    }
+  } else if (httpCode == 404) {
+    // OpenSky returns 404 if no flight plan is filed (very common for private planes)
+    currentRoute = "Private/Unknown";
+  } else {
+    currentRoute = "API Error " + String(httpCode);
+  }
+  
+  http.end();
+}
+
+// --- Fetch Bulk Flight Data ---
 void fetchFlightData() {
   if (WiFi.status() != WL_CONNECTED) {
     apiStatus = "No Wi-Fi!";
@@ -338,22 +362,26 @@ void drawRadar() {
   M5Dial.Display.setTextDatum(bottom_center);
   M5Dial.Display.drawString(apiStatus, 120, 230);
 
-  // --- EXPANDED INFO POPUP ---
+  // --- EXPANDED INFO POPUP (WITH ROUTE) ---
   if (selectedPlaneIndex != -1) {
     Plane p = planes[selectedPlaneIndex];
     
-    M5Dial.Display.fillRect(30, 40, 180, 70, TFT_DARKCYAN);
-    M5Dial.Display.drawRect(30, 40, 180, 70, TFT_WHITE);
+    // Taller box to accommodate the route
+    M5Dial.Display.fillRect(20, 30, 200, 90, TFT_DARKCYAN);
+    M5Dial.Display.drawRect(20, 30, 200, 90, TFT_WHITE);
     
     M5Dial.Display.setTextColor(TFT_WHITE, TFT_DARKCYAN);
     M5Dial.Display.setTextDatum(top_center);
     
-    M5Dial.Display.drawString("Flt: " + p.callsign, 120, 45);
+    M5Dial.Display.drawString("Flt: " + p.callsign, 120, 35);
     
     String altStr = p.altitude > 0 ? String((int)(p.altitude * 3.28084)) + " ft" : "GND/Unk";
-    M5Dial.Display.drawString("Alt: " + altStr, 120, 65);
+    M5Dial.Display.drawString("Alt: " + altStr, 120, 55);
     
-    M5Dial.Display.drawString("Orig: " + p.country, 120, 85);
+    M5Dial.Display.drawString("Orig: " + p.country, 120, 75);
+    
+    // Draw the Route data
+    M5Dial.Display.drawString("Rte: " + currentRoute, 120, 95);
   }
 
   if (showZoomFlash) {
