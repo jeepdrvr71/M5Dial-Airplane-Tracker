@@ -2,7 +2,6 @@ M5Dial Live Flight Radar ✈️📡
 A live, interactive ADS-B airplane radar tracker built for the M5Stack M5Dial (ESP32-S3). This project uses the OpenSky Network API to fetch live flight data and visually plots aircraft on the M5Dial's round touchscreen display.
 
 ✨ Features
-Location is manually set in LAT and LONG coordinates. Tried an autolocation method but it seemed to slow things down with the ESP32
 
 Rotary Encoder Zoom: Spin the physical dial to zoom the radar radius in and out (from a tight 30-mile radius up to a massive 240-mile regional view). Flashes a temporary UI element to show the current radius in miles.
 
@@ -55,6 +54,8 @@ Select M5Dial (or ESP32-S3 Dev Module if M5Dial isn't showing in your boards man
 
 🕹️ How to Use
 Booting Up: The device will connect to Wi-Fi and securely log in to OpenSky.
+
+Location: is manually set in LAT and LONG coordinates. Tried an autolocation method but it seemed to slow things down with the ESP32
 
 Zooming: Turn the outer dial. Counter-clockwise zooms out (up to 240 miles), clockwise zooms in (down to 30 miles).
 
